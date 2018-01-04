@@ -1,0 +1,21 @@
+solr/core/src/java/org/apache/solr/update/UpdateShardHandler.java:    clientConnectionManager = new PoolingClientConnectionManager(SchemeRegistryFactory.createSystemDefault());
+solr/core/src/java/org/apache/solr/core/CoreContainer.java: // private ClientConnectionManager clientConnectionManager = new PoolingClientConnectionManager();
+
+UpdateShardHandler and CoreContainer has both a different implementation of connectionManager
+
+No they don't: CoreContainer line is commented out
+
+That's the one: the class calling PoolingClientConnectionManager under the hood:
+
+solr/core/src/java/org/apache/solr/handler/component/HttpShardHandler.java:   * A distributed request is made via {@link LBHttpSolrClient} to the first live server in the URL list.
+solr/core/src/java/org/apache/solr/handler/component/HttpShardHandler.java:            try (SolrClient client = new HttpSolrClient(url, httpClient)) {
+solr/core/src/java/org/apache/solr/handler/component/HttpShardHandler.java:            LBHttpSolrClient.Rsp rsp = httpShardHandlerFactory.makeLoadBalancedRequest(req, urls);
+
+HttpShardHandler.java
+
+vs:
+
+solr/core/src/java/org/apache/solr/update/SolrCmdDistributor.java:import org.apache.solr.client.solrj.impl.HttpSolrClient;
+solr/core/src/java/org/apache/solr/update/SolrCmdDistributor.java:      try (HttpSolrClient client = new HttpSolrClient(req.node.getUrl(), clients.getHttpClient())) {
+
+SolrCmdDistributor (to distribute updates accross nodes)

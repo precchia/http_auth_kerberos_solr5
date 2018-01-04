@@ -1,0 +1,101 @@
+Note:
+
+AuthenticationPlugin
+
+org.apache.solr.security.KerberosPlugin
+implements: HttpClientBuilderPlugin
+extends: AuthenticationPlugin
+
+init:
+public abstract void init(Map<String, Object> pluginConfig);
+
+doAuthenticate:
+public abstract boolean doAuthenticate(ServletRequest request, ServletResponse response,
+FilterChain filterChain) throws Exception;
+
+Used like in: https://github.com/apache/lucene-solr/blob/master/solr/core/src/java/org/apache/solr/servlet/SolrDispatchFilter.java#L433
+
+private boolean authenticateRequest(ServletRequest request, ServletResponse response, final AtomicReference<ServletRequest> wrappedRequest) throws IOException {
+...
+requestContinues = authenticationPlugin.doAuthenticate(request, response, (req, rsp) -> {
+          isAuthenticated.set(true);
+          wrappedRequest.set(req);
+});
+
+Called from doFilter:
+public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain, boolean retry) throws IOException, ServletException {
+BUT we cannot call class SolrDispatchFilter or authenticateRequest within (private)
+
+
+We create a servlet. Bound to /entry
+Calling a service. Bound to /second
+/second returns 'OK'
+entry returns whatever /second returns
+
+Note:
+
+SolrDispatchFilter is a Filter.
+doFilter is a filter doing auth.
+Can we implement a filter?
+
+
+NOTE:
+
+first query and shard query manage subordinate queris differently:
+first query will use:
+this.httpClient = cores.getUpdateShardHandler().getHttpClient();
+within:
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/servlet/SolrDispatchFilter.java#L136
+used by: HttpSolrCall in remoteQuery:
+https://github.com/apache/lucene-solr/blob/releases/lucene-solr/5.5.2/solr/core/src/java/org/apache/solr/servlet/HttpSolrCall.java#L561
+
+shard queries will call:
+HttpShardHandler.submit
+Around here shardHandlerFactory (within SearchHandler):
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L122
+
+And then in:
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L225
+final ShardHandler shardHandler1 = getAndPrepShardHandler(req, rb); // creates a ShardHandler object only if it's needed
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L241
+
+shardHandler = shardHandlerFactory.getShardHandler();
+shardHandler.prepDistributed(rb);
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L201
+
+And finally:
+shardHandler1.submit(sreq, shard, params, rb.preferredHostAddress);
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L369
+
+if isDistributed
+
+If not then it will do:
+
+for( SearchComponent c : components ) {
+ c.process(rb);
+}
+
+Components come from:
+List<SearchComponent> components  = getComponents();
+
+SearchComponent:
+https://github.com/apache/lucene-solr/blob/releases/lucene-solr/5.5.2/solr/core/src/java/org/apache/solr/handler/component/SearchComponent.java
+
+Default components:
+
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L139
+https://github.com/apache/lucene-solr/blob/8e5d40b22a3968df065dfc078ef81cbb031f0e4a/solr/core/src/java/org/apache/solr/handler/component/SearchHandler.java#L74
+
+protected List<String> getDefaultComponents()
+  {
+    ArrayList<String> names = new ArrayList<>(8);
+    names.add( QueryComponent.COMPONENT_NAME );
+    names.add( FacetComponent.COMPONENT_NAME );
+    names.add( FacetModule.COMPONENT_NAME );
+    names.add( MoreLikeThisComponent.COMPONENT_NAME );
+    names.add( HighlightComponent.COMPONENT_NAME );
+    names.add( StatsComponent.COMPONENT_NAME );
+    names.add( DebugComponent.COMPONENT_NAME );
+    names.add( ExpandComponent.COMPONENT_NAME);
+    return names;
+}
